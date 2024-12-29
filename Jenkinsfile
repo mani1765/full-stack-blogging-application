@@ -50,10 +50,10 @@ pipeline {
             }
         }
         
-        stage('Maven Package') {
+        stage('Maven deploy') {
             steps {
                withMaven(globalMavenSettingsConfig: 'settings.xml', jdk: 'jdk17', maven: 'maven3', mavenSettingsConfig: '', traceability: true) {
-               sh "mvn package"
+               sh "mvn deploy"
              }
             }
         }
