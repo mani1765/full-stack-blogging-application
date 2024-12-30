@@ -1,1 +1,410 @@
-Hello World
+  Complete CI/CD Pipeline to build and Deploy Java Application in Kubernetes
+
+1. In AWS , Create Nexus and SonarQube t2.medium VMS [Ubuntu 22.04 LTS version] and security group include ports [SMTP 25 , HTTP 80 , HTTPS 443 , Custom TCP 2000 - 11000 , SSH 22 , SMTPS 465 and Custom TCP 6443] , Select Key pair , Storage 20GB >> Launch it
+
+2. In AWS , Create Jenkins t2.large VM [Ubuntu 22.04 LTS version] and security group include ports [SMTP 25 , HTTP 80 , HTTPS 443 , Custom TCP 2000 - 11000 , SSH 22 , SMTPS 465 and Custom TCP 6443] , Select Key pair , Storage 20GB >> Launch it 
+
+3. Connect to Nexus , SonarQube and Jenkins VM  , Update packages [$sudo apt update] on them.
+
+4. In Jenkins VM , Install java 17 headless version and install jenkins [follow official documentation from jenkins website ] || install docker and give permission [sudo chmod 666 /var/run/docker.sock] why this command ? Ans:- This command allow everyone to execute docker commands || Install trivy || install kubectl [snap install kubectl --classic]
+
+5. Access jenkins VM using port 8080 and get password from VM >> install suggested plugins >> create first admin user >> finish set-up 
+
+6. In Nexus VM, install docker and give permission [sudo chmod 666 /var/run/docker.sock] why this command ? Ans:- This command allow everyone to execute docker commands >> run below command :
+
+$sudo docker run -d -p 8081:8081 --name nexus sonatype/nexus3
+
+Access nexus using port 8081 and >> sign in : default username : admin , ssh into docker container and get the password > finish set-up
+
+7.. In SonarQube VM, install docker and give permission [sudo chmod 666 /var/run/docker.sock] why this command ? Ans:- This command allow everyone to execute docker commands >> run below command :
+
+$sudo docker run -d -p 9000:9000 --name sonarqube sonarqube:lts-community
+
+Access sonarqube using port 9000 and default username : admin , password : admin >> finish set-up
+
+8. In Jenkins , Manage Jenkins > Plugins > Available Plugins 
+
+Install following mentioned Jenkins Plugins: 1. SonarQube Scanner 2. Config File Provider 3. Maven Integration 4. Pipeline Maven Integration 5. Kubernetes Credentials 6. Kubernetes 7. Kubernetes CLI 8. Kubernetes Client API 9. Docker Pipeline 10. pipeline stage view 11. Eclipe temruin installer
+
+
+9. In SonarQube , Create a token - Administration > Security > Users > generate tokens > Provide : Name and Expire in > Generate >> Copy token
+
+
+10. In Jenkins , Manage Jenkins > Tools 
+
+Configure following mentioned Tools 
+
+1. Docker - Name : docker , Check Install automatically from dockerhub.com , version : latest
+2. Maven - Name : maven3 , Check Install automatically from apache , version : latest
+3. Sonarqube Scanner Installtion - Name : sonar-scanner , Check install automatically from maven central , version : latest
+4. JDK installations - Name : jdk17 , Check Install automatically from adoptium.com , version : 17.0.11
+
+11. In Jenkins, Manage Jenkins >> Credentials >> global >> add credentials >> kind : Secret Text , Paste Secret text in Secret field , ID : sonar-token , description : sonar-token >> save it.
+
+In Jenkins, Manage Jenkins >> Credentials >> global >> add credentials >> kind : Username and password , dockerhub username and password , ID : docker-cred , description : docker-cred >> add
+
+Manage Jenkins >> System >> SonarQube Installation >> Name : sonar-server , URL : http://127.0.0.0/9000 , select sonar-token credential >> Apply and save
+
+12. In Github Repo , Go to pom.xml file and add below code at end
+
+<distributionManagement>
+        <repository>
+            <id>maven-releases</id>
+            <url>http://<Nexus-ip>:8081/repository/maven-releases/</url>
+        </repository>
+        <snapshotRepository>
+            <id>maven-snapshots</id>
+            <url>http://<Nexus-ip>:8081/repository/maven-snapshots/</url>
+        </snapshotRepository>
+    </distributionManagement>
+
+update it.
+
+13. In Jenkins , Manage jenkins > Managed files > Add new config > Global maven settings >ID : maven-settings >> next >> content : uncomment <servers> block , copy <server> block and paste next to it and now we have two <server> blocks in side <servers> block
+
+sample code :
+
+<servers>
+
+<server>
+<id>maven-releases</id>
+<username>admin</username>
+<password>nexus-password</password>
+
+<server>
+<id>maven-snapshots</id>
+<username>admin</username>
+<password>nexus-password</password>
+
+</servers>
+
+Save it
+
+In Nexus , Repository > Repositories > Deployment policy : Allow Redeploy > save
+
+14. Create docker private repo called "mani1765/blogging-app"
+
+
+15. In AWS , Create Management Server [Ubuntu 22.04 LTS version] and security group include ports [SMTP 25 , HTTP 80 , HTTPS 443 , Custom TCP 2000 - 11000 , SSH 22 , SMTPS 465 and Custom TCP 6443] , Select Key pair , Storage 20GB >> Launch it
+
+Connect to the server , run sudo apt update >> install "AWSCLI" on Management Server || In AWS console , create access key and secret access key >> download csv file|| In Management Server  , Authenticate with AWS using aws configure command by providing access key and secret access key , region >> Install Terraform on Management Server  
+
+16. Create EKS Cluster using Terraform [refer github repo and modify terraform related files like keypair] 
+
+17. In Management server , install kubectl and eksctl as well(optional)
+
+after successful installation of kubectl run below command
+aws eks --region ap-south-1 update-kubeconfig --name <cluster-name> 
+create webapps name space 
+
+18. Create service account using RBAC in webapps namespace and generate token [follow this repo : https://github.com/mani1765/Blue-Green-Deployment/blob/main/Setup-RBAC.md]
+
+vi svc.yml
+================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: jenkins
+  namespace: webapps
+
+esc > :wq
+
+kubectl apply -f svc.yml
+
+vi rol.yml
+==========
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: app-role
+  namespace: webapps
+rules:
+  - apiGroups:
+        - ""
+        - apps
+        - autoscaling
+        - batch
+        - extensions
+        - policy
+        - rbac.authorization.k8s.io
+    resources:
+      - pods
+      - componentstatuses
+      - configmaps
+      - daemonsets
+      - deployments
+      - events
+      - endpoints
+      - horizontalpodautoscalers
+      - ingress
+      - jobs
+      - limitranges
+      - namespaces
+      - nodes
+      - secrets
+      - pods
+      - persistentvolumes
+      - persistentvolumeclaims
+      - resourcequotas
+      - replicasets
+      - replicationcontrollers
+      - serviceaccounts
+      - services
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+
+kubectl apply -f rol.yml
+
+============================================================
+vi bind.yml
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: app-rolebinding
+  namespace: webapps 
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: app-role 
+subjects:
+- namespace: webapps 
+  kind: ServiceAccount
+  name: jenkins 
+
+esc >> :wq
+
+kubectl apply -f bind.yml
+================================
+
+Create token for this service account
+----------------------------------------------
+vi jen-secret.yml
+
+apiVersion: v1
+kind: Secret
+type: kubernetes.io/service-account-token
+metadata:
+  name: mysecretname
+  annotations:
+    kubernetes.io/service-account.name: jenkins
+
+esc >> :wq
+
+kubectl apply -f jen-secret.yml -n webapps
+
+=====================================
+
+Secret to access private docker registery
+---------------------------------------------------
+
+run the below command
+
+kubectl create secret docker-registry regcred \
+        --docker-server=https://index.docker.io/v1/ \
+        --docker-username=mani1765
+        --docker-password=<your-docker-password>
+        --namespace=webapps
+
+secret created successfully
+
+
+========================================
+
+kubectl get secrets -n webapps
+o/p:-
+regcred
+mysecretname
+
+=========================================
+
+kubectl describe secret mysecretname -n webapps
+
+o/p:-
+
+copy token and put some where handy
+
+=========================================
+
+In Jenkins , Manage Jenkins > credentials > Global > Add credentials
+
+kind : Secret Text
+Secret : Paste token here
+ID: k8-cred
+Description: k8-cred
+
+Save and apply
+
+=============================================
+In AWS Console , Go to Cluster and copy API Server End-point and cluster name
+
+Create stage below for k8s deployment
+
+stage {
+
+steps {
+
+withKubeCredentials(kubectlCredentials: [[caCertificate: '', clusterName: 'demo-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', serverUrl: 'http://aws-api-endpoint.com/']]) {
+    
+sh "kubectl apply -f deployment-service.yml"
+sleep 30
+
+}
+}
+}
+
+
+. Create new pipeline
+Title : Bogging-App 
+Type: Pipeline
+
+run pipeline with above stage >> verify deployment is success >> access application using ALB end-point
+
+map to custom domain using route53 or other services
+
+Monitoring
+================
+
+
+1. In AWS , Create Monitoring Server [Ubuntu 22.04 LTS version] t2.large and security group include ports [SMTP 25 , HTTP 80 , HTTPS 443 , Custom TCP 2000 - 11000 , SSH 22 , SMTPS 465 and Custom TCP 6443] , Select Key pair , Storage 20GB >> Launch it
+
+2. SSH into Monitoring Server and update packages 
+
+3. Install Prometheus
+
+apt-get install wget
+
+wget https://github.com/prometheus/prometheus/releases/download/v3.0.0-beta.1/prometheus-3.0.0-beta.1.linux-amd64.tar.gz
+
+tar -xvf prometheus-3.0.0-beta.1.linux-amd64.tar.gz
+
+ mv prometheus-3.0.0-beta.1.linux-amd64 prometheus
+
+wget https://github.com/prometheus/blackbox_exporter/releases/download/v0.25.0/blackbox_exporter-0.25.0.linux-amd64.tar.gz
+
+ tar -xvf blackbox_exporter-0.25.0.linux-amd64.tar.gz
+
+ mv blackbox_exporter-0.25.0.linux-amd64 blackbox
+
+4. Install Grafana 
+
+sudo apt-get install -y adduser libfontconfig1 musl
+wget https://dl.grafana.com/enterprise/release/grafana-enterprise_11.4.0_amd64.deb
+sudo dpkg -i grafana-enterprise_11.4.0_amd64.deb
+
+sudo /bin/systemctl start grafana-server
+
+
+Access Grafana on port 3000 and default username and password is "admin"
+
+
+5. Start Prometheus 
+
+cd /prometheus
+
+./prometheus &
+
+Access Premetheus on port 9090
+
+cd /blackbox
+
+./blackbox_exporter &
+
+Access blackbox exporter on port 9115
+
+cd /prometheus
+
+ls
+
+vi prometheus.yml
+
+paste the below code in prometheus.yml file at end 
+
+ - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]  # Look for a HTTP 200 response.
+    static_configs:
+      - targets:
+        - http://prometheus.io    # Target to probe with http.
+        - http://example.com:8080 # Target to probe with http on port 8080. 
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115  # The blackbox exporter's real hostname:port.
+  - job_name: 'blackbox_exporter'  # collect blackbox exporter's operational metrics.
+    static_configs:
+      - targets: ['127.0.0.1:9115']
+
+Make sure update ip address with blackbox_exporter
+
+Note :- if prometheus and blackbox running on same VM not need to update ip if both are in different VMs update with correct IPs  
+
+
+Under targets update your website URL for monitoring the website https://example.com:8080 use your website like http://demoapp.com/
+
+
+esc >> :wq
+
+
+pgrep prometheus
+
+8788
+
+kill 8788
+
+./prometheus &
+
+
+
+
+Go to Prometheus and refresh webpage >> Verify blackbox is added 
+
+
+
+
+Go to Grafana >> Connections >> Data Sources >> Select "Prometheus" >> Provide Prometheus URL with port 9090/ >> Save and Test >> Success
+
+
+
+Dashboards >> ID : 7587 >> Select Data Source as Prmetheus >> Import 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 
+
+
