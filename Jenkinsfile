@@ -69,7 +69,19 @@ pipeline {
     }
 }
 
-        
+        stage {
+
+steps {
+
+withKubeCredentials(kubectlCredentials: [[caCertificate: '', clusterName: 'demo-cluster', contextName: '', credentialsId: 'k8-cred', namespace: 'webapps', serverUrl: 'http://aws-api-endpoint.com/']]) {
+    
+sh "kubectl apply -f deployment-service.yml"
+sleep 30
+
+      }
+   }
+}
+
         stage('Trivy Image Scan') {
             steps {
                 sh "trivy image --format table -o image.html mani1765/blogging-app:latest"
